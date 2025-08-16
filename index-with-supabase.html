@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Japanese School Organizer - 学校情報管理</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .japanese-tooltip:hover::after {
+            content: attr(title);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        .japanese-tooltip {
+            position: relative;
+            cursor: help;
+        }
+
+        .file-drop-zone {
+            border: 2px dashed #d1d5db;
+            transition: border-color 0.2s;
+        }
+
+        .file-drop-zone:hover {
+            border-color: #6366f1;
+        }
+
+        .file-drop-zone.dragover {
+            border-color: #4f46e5;
+            background-color: #eef2ff;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root">
+        <div class="min-h-screen bg-blue-50 flex items-center justify-center">
+            <div class="text-center">
+                <div class="text-4xl mb-4">🏫</div>
+                <h1 class="text-2xl font-bold mb-4">学校情報管理</h1>
+                <p class="text-gray-600">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // SUPABASE CONFIGURATION - UPDATE THESE WITH YOUR KEYS
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE';
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE';
+        const AUTHORIZED_EMAILS = ['rupesh.agrawal@gmail.com', 'smita.vishwa@gmail.com'];
+
+        // Initialize Supabase client
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const SchoolOrganizer = () => {
+            // Authentication state
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [user, setUser] = useState(null);
+            const [authError, setAuthError] = useState('');
+
+            // App state
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [items, setItems] = useState([]);
+            const [events, setEvents] = useState([]);
+            const [actionItems, setActionItems] = useState([]);
+            const [academics, setAcademics] = useState([]);
+            const [uploadedFiles, setUploadedFiles] = useState([]);
+
+            // UI state
+            const [showAddForm, setShowAddForm] = useState(false);
+            const [showQuickEventForm, setShowQuickEventForm] = useState(false);
+            const [loading, setLoading] = useState(false);
+            const fileInputRef = useRef(null);
+
+            // Form state
+            const [newItem, setNewItem] = useState({
+                title: '',
+                category: 'events',
+                date: '',
+                startTime: '09:00',
+                endTime: '17:00',
+                content: '',
+                tags: '',
+                location: '',
+                actionRequired: false
+            });
+
+            // Japanese pronunciation dictionary
+            const japaneseWords = {
+                '学校': 'ガッコウ (gakkou)',
+                '情報': 'ジョウホウ (jouhou)',
+                '管理': 'カンリ (kanri)',
+                '体育祭': 'タイイクサイ (taiikusai)',
+                'PTA': 'ピーティーエー (piitii ee)',
+                '最近': 'サイキン (saikin)',
+                'やること': 'ヤルコト (yaru koto)',
+                '中間テスト': 'チュウカンテスト (chuukan tesuto)',
+                '文化祭': 'ブンカサイ (bunkasai)',
+                '授業参観': 'ジュギョウサンカン (jugyou sankan)',
+                '懇談会': 'コンダンカイ (kondankai)',
+                '遠足': 'エンソク (ensoku)',
+                '給食': 'キュウショク (kyuushoku)',
+                '行事': 'ギョウジ (gyouji)',
+                '学習': 'ガクシュウ (gakushuu)',
+                '活動': 'カツドウ (katsudou)',
+                '総会': 'ソウカイ (soukai)',
+                '試食会': 'シショクカイ (shishokukai)',
+                '会議': 'カイギ (kaigi)',
+                '支払い': 'シハライ (shiharai)',
+                '参加届': 'サンカトドケ (sanka todoke)',
+                '出席': 'シュッセキ (shusseki)',
+                '返事': 'ヘンジ (henji)',
+                '家庭訪問': 'カテイホウモン (katei houmon)',
+                '修学旅行': 'シュウガクリョコウ (shuugaku ryokou)',
+                'クラブ活動': 'クラブカツドウ (kurabu katsudou)',
+                '音楽発表会': 'オンガクハッピョウカイ (ongaku happyoukai)'
+            };
+
+            // Japanese event templates
+            const japaneseEventTemplates = [
+                { name: '体育祭 (Sports Festival)', icon: '🏆', category: 'events', duration: 8 },
+                { name: '文化祭 (Culture Festival)', icon: '🎭', category: 'events', duration: 6 },
+                { name: 'PTA会議 (PTA Meeting)', icon: '👥', category: 'meetings', duration: 2 },
+                { name: '授業参観 (Class Observation)', icon: '🎓', category: 'academics', duration: 3 },
+                { name: '家庭訪問 (Home Visit)', icon: '🏠', category: 'meetings', duration: 1 },
+                { name: '懇談会 (Parent Conference)', icon: '💬', category: 'meetings', duration: 2 },
+                { name: '遠足 (School Trip)', icon: '🚌', category: 'trips', duration: 8 },
+                { name: '修学旅行 (School Excursion)', icon: '🗾', category: 'trips', duration: 1440 },
+                { name: '給食試食会 (Lunch Tasting)', icon: '🍱', category: 'events', duration: 2 },
+                { name: '音楽発表会 (Music Recital)', icon: '🎵', category: 'performances', duration: 3 }
+            ];
+
+            // Japanese tooltip component
+            const JapaneseText = ({ children }) => {
+                if (!children) return null;
+                let result = children;
+                Object.entries(japaneseWords).forEach(([japanese, pronunciation]) => {
+                    const regex = new RegExp(japanese, 'g');
+                    result = result.replace(regex,
+                        `<span class="japanese-tooltip underline decoration-dotted" title="${pronunciation}">${japanese}</span>`);
+                });
+                return <span dangerouslySetInnerHTML={{ __html: result }} />;
+            };
+
+            // Supabase authentication
+            useEffect(() => {
+                // Check for existing session
+                const checkSession = async () => {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (session && AUTHORIZED_EMAILS.includes(session.user.email)) {
+                        setUser(session.user);
+                        setIsAuthenticated(true);
+                        loadData();
+                    }
+                };
+
+                checkSession();
+
+                // Listen for auth changes
+                const { data: { subscription } } = supabase.auth.onAuthStateChange(
+                    async (event, session) => {
+                        if (event === 'SIGNED_IN' && session && AUTHORIZED_EMAILS.includes(session.user.email)) {
+                            setUser(session.user);
+                            setIsAuthenticated(true);
+                            setAuthError('');
+                            loadData();
+                        } else if (event === 'SIGNED_OUT') {
+                            setUser(null);
+                            setIsAuthenticated(false);
+                        }
+                    }
+                );
+
+                return () => subscription.unsubscribe();
+            }, []);
+
+            const signInWithGoogle = async () => {
+                try {
+                    const { error } = await supabase.auth.signInWithOAuth({
+                        provider: 'google',
+                        options: {
+                            redirectTo: window.location.origin
+                        }
+                    });
+                    if (error) throw error;
+                } catch (error) {
+                    setAuthError('Authentication failed. Please try again.');
+                }
+            };
+
+            const signOut = async () => {
+                await supabase.auth.signOut();
+                setUser(null);
+                setIsAuthenticated(false);
+            };
+
+            // Load data from Supabase
+            const loadData = async () => {
+                if (!user) return;
+
+                try {
+                    setLoading(true);
+
+                    // Load school events
+                    const { data: eventsData, error: eventsError } = await supabase
+                        .from('school_events')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .order('event_date', { ascending: true });
+
+                    if (eventsError) throw eventsError;
+                    setItems(eventsData || []);
+                    setEvents(eventsData || []);
+
+                    // Load action items
+                    const { data: actionData, error: actionError } = await supabase
+                        .from('action_items')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .order('due_date', { ascending: true });
+
+                    if (actionError) throw actionError;
+                    setActionItems(actionData || []);
+
+                    // Load academic records
+                    const { data: academicData, error: academicError } = await supabase
+                        .from('academic_records')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .order('record_date', { ascending: false });
+
+                    if (academicError) throw academicError;
+                    setAcademics(academicData || []);
+
+                    // Load file attachments
+                    const { data: fileData, error: fileError } = await supabase
+                        .from('file_attachments')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .order('created_at', { ascending: false });
+
+                    if (fileError) throw fileError;
+                    setUploadedFiles(fileData || []);
+
+                } catch (error) {
+                    console.error('Error loading data:', error);
+                    setAuthError('Failed to load data. Please refresh the page.');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // Add new item to Supabase
+            const addNewItem = async () => {
+                if (!newItem.title.trim() || !user) return;
+
+                try {
+                    const itemData = {
+                        user_id: user.id,
+                        title: newItem.title,
+                        category: newItem.category,
+                        event_date: newItem.date,
+                        start_time: newItem.startTime,
+                        end_time: newItem.endTime,
+                        content: newItem.content,
+                        location: newItem.location,
+                        tags: newItem.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+                        action_required: newItem.actionRequired
+                    };
+
+                    const { data, error } = await supabase
+                        .from('school_events')
+                        .insert([itemData])
+                        .select();
+
+                    if (error) throw error;
+
+                    setItems([...items, ...data]);
+                    setEvents([...events, ...data]);
+
+                    // Reset form
+                    setNewItem({
+                        title: '',
+                        category: 'events',
+                        date: '',
+                        startTime: '09:00',
+                        endTime: '17:00',
+                        content: '',
+                        tags: '',
+                        location: '',
+                        actionRequired: false
+                    });
+                    setShowAddForm(false);
+
+                } catch (error) {
+                    console.error('Error adding item:', error);
+                    setAuthError('Failed to add item. Please try again.');
+                }
+            };
+
+            const addQuickJapaneseEvent = (template) => {
+                const endHour = 9 + (template.duration > 24 ? 8 : template.duration);
+                setNewItem({
+                    title: template.name,
+                    category: template.category,
+                    date: '',
+                    startTime: '09:00',
+                    endTime: `${endHour.toString().padStart(2, '0')}:00`,
+                    content: `Quick event: ${template.name}`,
+                    tags: '学校行事',
+                    location: '学校 (School)',
+                    actionRequired: true
+                });
+                setShowAddForm(true);
+                setShowQuickEventForm(false);
+            };
+
+            const toggleActionItem = async (id) => {
+                try {
+                    const item = actionItems.find(a => a.id === id);
+                    const { error } = await supabase
+                        .from('action_items')
+                        .update({ completed: !item.completed })
+                        .eq('id', id);
+
+                    if (error) throw error;
+
+                    setActionItems(actionItems.map(item =>
+                        item.id === id ? { ...item, completed: !item.completed } : item
+                    ));
+                } catch (error) {
+                    console.error('Error updating action item:', error);
+                }
+            };
+
+            const filteredItems = items.filter(item =>
+                item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (item.tags && item.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
+            );
+
+            // Login screen
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full">
+                            <div className="text-center mb-6">
+                                <div className="text-5xl mb-4">🏫</div>
+                                <h1 className="text-2xl font-bold mb-2">
+                                    <JapaneseText>学校情報管理</JapaneseText>
+                                </h1>
+                                <p className="text-gray-600">Japanese School Organizer</p>
+                                <p className="text-sm text-blue-600 mt-2">🔐 Secure Supabase Authentication</p>
+                            </div>
+
+                            {authError && (
+                                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                                    {authError}
+                                </div>
+                            )}
+
+                            <button
+                                onClick={signInWithGoogle}
+                                className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 mb-4 flex items-center justify-center"
+                            >
+                                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                    <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                                </svg>
+                                Sign in with Google
+                            </button>
+
+                            <div className="text-xs text-gray-500 mt-4 text-center">
+                                <p>Authorized family members:</p>
+                                <p>{AUTHORIZED_EMAILS.join(', ')}</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Main app
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+                    {/* Header */}
+                    <div className="bg-white shadow-lg border-b-4 border-indigo-500">
+                        <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4">
+                            <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
+                                <div className="flex items-center space-x-3">
+                                    <div className="text-3xl">🏫</div>
+                                    <div>
+                                        <h1 className="text-xl sm:text-2xl font-bold">
+                                            <JapaneseText>学校情報管理</JapaneseText>
+                                        </h1>
+                                        <p className="text-sm text-gray-600">Welcome, {user?.email}</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="Search..."
+                                            className="pl-8 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 w-full sm:w-48"
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                        />
+                                        <div className="absolute left-2 top-2 text-gray-400">🔍</div>
+                                    </div>
+
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm"
+                                        title="Upload School Documents"
+                                    >
+                                        📎
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowQuickEventForm(true)}
+                                        className="bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 text-sm"
+                                        title="Quick Japanese Events"
+                                    >
+                                        ⚡
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowAddForm(true)}
+                                        className="bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700 text-sm"
+                                    >
+                                        + Add
+                                    </button>
+
+                                    <button
+                                        onClick={signOut}
+                                        className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 text-sm"
+                                    >
+                                        Logout
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Hidden file input */}
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={(e) => handleFileUpload(e.target.files)}
+                        multiple
+                        accept="image/*,.pdf,.doc,.docx"
+                        className="hidden"
+                    />
+
+                    {/* Navigation Tabs */}
+                    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4">
+                        <div className="flex space-x-1 bg-white rounded-lg p-1 shadow overflow-x-auto">
+                            {[
+                                { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+                                { id: 'events', label: 'Events', icon: '🎉' },
+                                { id: 'academics', label: 'Academics', icon: '📚' },
+                                { id: 'actions', label: 'Actions', icon: '✅' }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center space-x-2 px-3 sm:px-4 py-2 sm:py-3 rounded-md font-medium transition-all whitespace-nowrap text-sm ${activeTab === tab.id
+                                            ? 'bg-indigo-600 text-white shadow-md'
+                                            : 'text-gray-600 hover:bg-gray-100'
+                                        }`}
+                                >
+                                    <span>{tab.icon}</span>
+                                    <span className="hidden sm:inline">{tab.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Quick Japanese Event Modal */}
+                    {showQuickEventForm && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-lg w-full max-w-lg shadow-xl max-h-screen overflow-y-auto">
+                                <div className="p-6">
+                                    <h3 className="text-lg font-bold mb-4 text-center">
+                                        <JapaneseText>日本の学校行事 (Japanese School Events)</JapaneseText>
+                                    </h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {japaneseEventTemplates.map((template, index) => (
+                                            <button
+                                                key={index}
+                                                onClick={() => addQuickJapaneseEvent(template)}
+                                                className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 text-left"
+                                            >
+                                                <span className="text-xl">{template.icon}</span>
+                                                <div className="flex-1">
+                                                    <p className="font-medium text-sm">
+                                                        <JapaneseText>{template.name}</JapaneseText>
+                                                    </p>
+                                                    <p className="text-xs text-gray-500">{template.category}</p>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => setShowQuickEventForm(false)}
+                                        className="w-full mt-4 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add Form Modal */}
+                    {showAddForm && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-lg w-full max-w-lg shadow-xl max-h-screen overflow-y-auto">
+                                <div className="p-6">
+                                    <h3 className="text-lg font-bold mb-4">
+                                        <JapaneseText>新しい学校情報を追加 (Add New School Information)</JapaneseText>
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <input
+                                            type="text"
+                                            placeholder="Title (Japanese/English)"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            value={newItem.title}
+                                            onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
+                                        />
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <select
+                                                className="w-full p-3 border rounded-lg text-sm"
+                                                value={newItem.category}
+                                                onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                                            >
+                                                <option value="events">Events</option>
+                                                <option value="academics">Academics</option>
+                                                <option value="meetings">Meetings</option>
+                                                <option value="trips">Trips</option>
+                                                <option value="performances">Performances</option>
+                                            </select>
+                                        </div>
+
+                                        <input
+                                            type="date"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            value={newItem.date}
+                                            onChange={(e) => setNewItem({ ...newItem, date: e.target.value })}
+                                        />
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input
+                                                type="time"
+                                                className="w-full p-3 border rounded-lg text-sm"
+                                                value={newItem.startTime}
+                                                onChange={(e) => setNewItem({ ...newItem, startTime: e.target.value })}
+                                            />
+                                            <input
+                                                type="time"
+                                                className="w-full p-3 border rounded-lg text-sm"
+                                                value={newItem.endTime}
+                                                onChange={(e) => setNewItem({ ...newItem, endTime: e.target.value })}
+                                            />
+                                        </div>
+
+                                        <input
+                                            type="text"
+                                            placeholder="Location (場所)"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            value={newItem.location}
+                                            onChange={(e) => setNewItem({ ...newItem, location: e.target.value })}
+                                        />
+
+                                        <textarea
+                                            placeholder="Content/Description (内容)"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            rows="3"
+                                            value={newItem.content}
+                                            onChange={(e) => setNewItem({ ...newItem, content: e.target.value })}
+                                        />
+
+                                        <input
+                                            type="text"
+                                            placeholder="Tags (comma separated)"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            value={newItem.tags}
+                                            onChange={(e) => setNewItem({ ...newItem, tags: e.target.value })}
+                                        />
+
+                                        <div className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                id="actionRequired"
+                                                className="mr-2"
+                                                checked={newItem.actionRequired}
+                                                onChange={(e) => setNewItem({ ...newItem, actionRequired: e.target.checked })}
+                                            />
+                                            <label htmlFor="actionRequired" className="text-sm">Action Required</label>
+                                        </div>
+
+                                        <div className="flex space-x-3">
+                                            <button
+                                                onClick={addNewItem}
+                                                className="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700"
+                                            >
+                                                Add Item
+                                            </button>
+                                            <button
+                                                onClick={() => setShowAddForm(false)}
+                                                className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Main Content */}
+                    <div className="max-w-7xl mx-auto px-2 sm:px-4 pb-8">
+                        {loading && (
+                            <div className="text-center py-8">
+                                <div className="text-2xl mb-2">⏳</div>
+                                <p className="text-gray-600">Loading your school data...</p>
+                            </div>
+                        )}
+
+                        {!loading && activeTab === 'dashboard' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                {/* Recent Items */}
+                                <div className="lg:col-span-2 bg-white rounded-lg shadow-lg p-6">
+                                    <h2 className="text-xl font-bold mb-4 flex items-center">
+                                        📋 <JapaneseText>最近の学校情報 (Recent Info)</JapaneseText>
+                                    </h2>
+                                    <div className="space-y-4">
+                                        {filteredItems.slice(0, 5).map(item => (
+                                            <div key={item.id} className="border-l-4 border-indigo-500 pl-4 py-3 bg-gray-50 rounded-r-lg">
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex-1 min-w-0">
+                                                        <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">
+                                                            <JapaneseText>{item.title}</JapaneseText>
+                                                        </h3>
+                                                        <p className="text-gray-600 text-xs sm:text-sm mt-1">{item.content}</p>
+                                                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                            <span className="text-xs text-gray-500">📅 {item.event_date}</span>
+                                                            {item.location && (
+                                                                <span className="text-xs text-gray-500">📍 <JapaneseText>{item.location}</JapaneseText></span>
+                                                            )}
+                                                            <span className={`px-2 py-1 rounded-full text-xs ${item.category === 'events' ? 'bg-blue-100 text-blue-800' :
+                                                                    item.category === 'academics' ? 'bg-green-100 text-green-800' :
+                                                                        item.category === 'meetings' ? 'bg-purple-100 text-purple-800' :
+                                                                            'bg-gray-100 text-gray-800'
+                                                                }`}>
+                                                                {item.category}
+                                                            </span>
+                                                            {item.tags && item.tags.slice(0, 2).map(tag => (
+                                                                <span key={tag} className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full text-xs">
+                                                                    <JapaneseText>{tag}</JapaneseText>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col items-end space-y-2 ml-2">
+                                                        {item.action_required && (
+                                                            <span className="text-red-500 text-xs">⚠️</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Stats & Quick Actions */}
+                                <div className="space-y-6">
+                                    <div className="bg-white rounded-lg shadow-lg p-6">
+                                        <h3 className="text-lg font-bold mb-4">📊 Quick Stats</h3>
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Total Items</span>
+                                                <span className="font-bold text-indigo-600">{items.length}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Pending Actions</span>
+                                                <span className="font-bold text-red-600">{actionItems.filter(a => !a.completed).length}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Files Uploaded</span>
+                                                <span className="font-bold text-purple-600">{uploadedFiles.length}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white rounded-lg shadow-lg p-6">
+                                        <h3 className="text-lg font-bold mb-4">🚀 <JapaneseText>クイック追加</JapaneseText></h3>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {japaneseEventTemplates.slice(0, 4).map((template, index) => (
+                                                <button
+                                                    key={index}
+                                                    onClick={() => addQuickJapaneseEvent(template)}
+                                                    className="flex flex-col items-center p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-center"
+                                                >
+                                                    <span className="text-lg mb-1">{template.icon}</span>
+                                                    <span className="text-xs font-medium truncate w-full">
+                                                        <JapaneseText>{template.name.split('(')[0].trim()}</JapaneseText>
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <button
+                                            onClick={() => setShowQuickEventForm(true)}
+                                            className="w-full mt-3 bg-purple-100 text-purple-700 py-2 rounded-lg hover:bg-purple-200 text-sm"
+                                        >
+                                            View All Templates
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {!loading && activeTab === 'events' && (
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h2 className="text-xl font-bold mb-6 flex items-center">
+                                    🎉 <JapaneseText>行事・活動 (Events & Activities)</JapaneseText>
+                                </h2>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {filteredItems.filter(item => ['events', 'clubs', 'meetings', 'trips', 'performances'].includes(item.category)).map(item => (
+                                        <div key={item.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                                            <div className="flex items-start justify-between mb-2">
+                                                <h3 className="font-semibold text-gray-900 text-sm flex-1">
+                                                    <JapaneseText>{item.title}</JapaneseText>
+                                                </h3>
+                                                {item.action_required && <span className="text-red-500 ml-2">⚠️</span>}
+                                            </div>
+                                            <p className="text-xs text-gray-600 mb-3">{item.content}</p>
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <div className="flex flex-wrap items-center gap-1">
+                                                    <span className="text-xs text-gray-500">📅 {item.event_date}</span>
+                                                    {item.location && (
+                                                        <span className="text-xs text-gray-500">📍 <JapaneseText>{item.location}</JapaneseText></span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {!loading && activeTab === 'academics' && (
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h2 className="text-xl font-bold mb-6 flex items-center">
+                                    📚 <JapaneseText>学習記録 (Academic Tracking)</JapaneseText>
+                                </h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <h3 className="text-lg font-semibold mb-4">
+                                            <JapaneseText>最近の成績 (Recent Grades)</JapaneseText>
+                                        </h3>
+                                        <div className="space-y-3">
+                                            {academics.map(record => (
+                                                <div key={record.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                    <div className="flex-1">
+                                                        <p className="font-medium text-sm">
+                                                            <JapaneseText>{record.subject}</JapaneseText>
+                                                        </p>
+                                                        <p className="text-xs text-gray-600">{record.child_name} • {record.record_date}</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${record.grade.startsWith('A') ? 'bg-green-100 text-green-800' :
+                                                                record.grade.startsWith('B') ? 'bg-blue-100 text-blue-800' :
+                                                                    'bg-yellow-100 text-yellow-800'
+                                                            }`}>
+                                                            {record.grade}
+                                                        </span>
+                                                        <p className="text-xs text-gray-500 mt-1">{record.record_type}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold mb-4">
+                                            <JapaneseText>学習予定 (Study Schedule)</JapaneseText>
+                                        </h3>
+                                        <div className="text-center py-8 text-gray-500">
+                                            <div className="text-4xl mb-2">📅</div>
+                                            <p className="text-sm">Exam schedules and study plans will appear here</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {!loading && activeTab === 'actions' && (
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h2 className="text-xl font-bold mb-6 flex items-center">
+                                    ✅ <JapaneseText>やることリスト (Action Items & Tasks)</JapaneseText>
+                                </h2>
+                                <div className="space-y-4">
+                                    {actionItems.map(action => (
+                                        <div key={action.id} className={`flex items-center justify-between p-4 rounded-lg border-2 ${action.completed ? 'border-green-200 bg-green-50' : 'border-orange-200 bg-orange-50'
+                                            }`}>
+                                            <div className="flex items-center space-x-3 flex-1">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={action.completed}
+                                                    onChange={() => toggleActionItem(action.id)}
+                                                    className="w-5 h-5"
+                                                />
+                                                <div className="flex-1">
+                                                    <p className={`font-medium text-sm ${action.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                                                        <JapaneseText>{action.task}</JapaneseText>
+                                                    </p>
+                                                    <p className="text-xs text-gray-600">
+                                                        {action.child_name} • Due: {action.due_date}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className={`px-3 py-1 rounded-full text-sm ${action.completed ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+                                                }`}>
+                                                {action.completed ? 'Complete' : 'Pending'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Mobile Bottom Navigation */}
+                    <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2">
+                        <div className="flex justify-around">
+                            <button
+                                onClick={() => setShowAddForm(true)}
+                                className="flex flex-col items-center space-y-1 p-2"
+                            >
+                                <span className="text-xl">➕</span>
+                                <span className="text-xs text-gray-600">Add</span>
+                            </button>
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="flex flex-col items-center space-y-1 p-2"
+                            >
+                                <span className="text-xl">📎</span>
+                                <span className="text-xs text-gray-600">Upload</span>
+                            </button>
+                            <button
+                                onClick={() => setShowQuickEventForm(true)}
+                                className="flex flex-col items-center space-y-1 p-2"
+                            >
+                                <span className="text-xl">⚡</span>
+                                <span className="text-xs text-gray-600">Quick</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Add padding for mobile navigation */}
+                    <div className="h-16 sm:h-0"></div>
+                </div>
+            );
+        };
+
+        // Initialize the React app
+        try {
+            console.log('Attempting to render SchoolOrganizer...');
+            ReactDOM.render(<SchoolOrganizer />, document.getElementById('root'));
+            console.log('SchoolOrganizer rendered successfully');
+        } catch (error) {
+            console.error('Error rendering SchoolOrganizer:', error);
+            // Fallback to simple test
+            ReactDOM.render(
+                <div style={{padding: '20px', textAlign: 'center'}}>
+                    <h1>React Test</h1>
+                    <p>React is working! Error in SchoolOrganizer component.</p>
+                    <p>Error: {error.message}</p>
+                </div>, 
+                document.getElementById('root')
+            );
+        }
+    </script>
+</body>
+
+</html>

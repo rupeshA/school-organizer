@@ -6,7 +6,7 @@ Content is user-generated and unverified.
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Japanese School Organizer - 学校情報管理</title>
-    <script src="https://accounts.google.com/gsi/client" defer></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -67,9 +67,13 @@ Content is user-generated and unverified.
         
         const { useState, useEffect, useRef } = React;
 
-        // CONFIGURATION - UPDATE THESE
-        const GOOGLE_CLIENT_ID = '273996418341-ul8gluld457g9825di7tgr63adcujblb.apps.googleusercontent.com';
+        // SUPABASE CONFIGURATION - UPDATE THESE WITH YOUR KEYS
+        const SUPABASE_URL = 'https://itesurdmgboogkuwqfyd.supabase.co'; // Replace with your Project URL
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0ZXN1cmRtZ2Jvb2drdXdxZnlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzMjMyNDEsImV4cCI6MjA3MDg5OTI0MX0.5S5iFzAPm56wUd2t_VLQ_w1lyDdX5OwU5xqoEk7AKNE'; // Replace with your anon public key
         const AUTHORIZED_EMAILS = ['rupesh.agrawal@gmail.com', 'smita.vishwa@gmail.com'];
+
+        // Initialize Supabase client
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const SchoolOrganizer = () => {
             // Authentication state
