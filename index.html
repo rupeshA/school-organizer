@@ -166,97 +166,125 @@ Content is user-generated and unverified.
                 return <span dangerouslySetInnerHTML={{ __html: result }} />;
             };
 
-            // Google OAuth initialization
+            // Supabase authentication
             useEffect(() => {
-                const initAuth = () => {
-                    console.log('Initializing auth...');
-                    console.log('Google Client ID:', GOOGLE_CLIENT_ID);
-                    console.log('Google object available:', !!window.google);
-                    
-                    if (GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID_HERE') {
-                        setAuthError('Please configure Google Client ID and authorized emails');
-                        return;
-                    }
-
-                    // Check existing session
-                    const saved = localStorage.getItem('schoolUser');
-                    if (saved) {
-                        const userData = JSON.parse(saved);
-                        if (AUTHORIZED_EMAILS.includes(userData.email)) {
-                            setUser(userData);
-                            setIsAuthenticated(true);
-                            loadData();
-                            return;
-                        }
-                    }
-
-                    // Initialize Google Sign-In
-                    if (window.google) {
-                        console.log('Initializing Google Sign-In...');
-                        window.google.accounts.id.initialize({
-                            client_id: GOOGLE_CLIENT_ID,
-                            callback: handleSignIn
-                        });
-                    } else {
-                        console.log('Google not available, retrying...');
-                        setTimeout(initAuth, 100);
-                    }
-                };
-                setTimeout(initAuth, 500);
-            }, []);
-
-            const handleSignIn = (response) => {
-                try {
-                    const payload = JSON.parse(atob(response.credential.split('.')[1]));
-                    if (AUTHORIZED_EMAILS.includes(payload.email)) {
-                        const userData = {
-                            name: payload.name,
-                            email: payload.email,
-                            picture: payload.picture
-                        };
-                        setUser(userData);
+                // Check for existing session
+                const checkSession = async () => {
+                    console.log('Checking Supabase session...');
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (session && AUTHORIZED_EMAILS.includes(session.user.email)) {
+                        console.log('Found existing session:', session.user.email);
+                        setUser(session.user);
                         setIsAuthenticated(true);
-                        setAuthError('');
-                        localStorage.setItem('schoolUser', JSON.stringify(userData));
                         loadData();
                     } else {
-                        setAuthError(`${payload.email} is not authorized for this family organizer`);
+                        console.log('No valid session found');
                     }
+                };
+
+                checkSession();
+
+                // Listen for auth changes
+                const { data: { subscription } } = supabase.auth.onAuthStateChange(
+                    async (event, session) => {
+                        console.log('Auth state changed:', event, session?.user?.email);
+                        if (event === 'SIGNED_IN' && session && AUTHORIZED_EMAILS.includes(session.user.email)) {
+                            setUser(session.user);
+                            setIsAuthenticated(true);
+                            setAuthError('');
+                            loadData();
+                        } else if (event === 'SIGNED_OUT') {
+                            setUser(null);
+                            setIsAuthenticated(false);
+                        }
+                    }
+                );
+
+                return () => subscription.unsubscribe();
+            }, []);
+
+            const signInWithGoogle = async () => {
+                try {
+                    console.log('Signing in with Google...');
+                    const { error } = await supabase.auth.signInWithOAuth({
+                        provider: 'google',
+                        options: {
+                            redirectTo: window.location.origin
+                        }
+                    });
+                    if (error) throw error;
                 } catch (error) {
+                    console.error('Sign in error:', error);
                     setAuthError('Authentication failed. Please try again.');
                 }
             };
 
-            const signOut = () => {
+            const signOut = async () => {
+                console.log('Signing out...');
+                await supabase.auth.signOut();
                 setUser(null);
                 setIsAuthenticated(false);
-                localStorage.removeItem('schoolUser');
-                localStorage.removeItem('schoolData');
-                if (window.google) {
-                    window.google.accounts.id.disableAutoSelect();
-                }
             };
 
-            const loadData = () => {
-                console.log('Loading data...');
-                const saved = localStorage.getItem('schoolData');
-                console.log('Saved data:', saved);
-                
-                if (saved) {
-                    const data = JSON.parse(saved);
-                    console.log('Loading saved data:', data);
-                    setItems(data.items || []);
-                    setEvents(data.events || []);
-                    setActionItems(data.actionItems || []);
-                    setAcademics(data.academics || []);
-                    setUploadedFiles(data.uploadedFiles || []);
-                } else {
-                    console.log('No saved data found, loading sample data...');
-                    // Load sample Japanese school data
-                    setItems([
-                        {
-                            id: 1,
-                            title: '体育祭のお知らせ (Sports Festival Notice)',
+            const loadData = async () => {
+                if (!user) return;
+
+                try {
+                    console.log('Loading data from Supabase...');
+                    setLoading(true);
+
+                    // Load school events
+                    const { data: eventsData, error: eventsError } = await supabase
+                        .from('school_events')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .order('event_date', { ascending: true });
+
+                    if (eventsError) throw eventsError;
+                    console.log('Loaded events:', eventsData);
+                    setItems(eventsData || []);
+                    setEvents(eventsData || []);
+
+                    // Load action items
+                    const { data: actionData, error: actionError } = await supabase
+                        .from('action_items')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .order('due_date', { ascending: true });
+
+                    if (actionError) throw actionError;
+                    console.log('Loaded action items:', actionData);
+                    setActionItems(actionData || []);
+
+                    // Load academic records
+                    const { data: academicData, error: academicError } = await supabase
+                        .from('academic_records')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .order('record_date', { ascending: false });
+
+                    if (academicError) throw academicError;
+                    console.log('Loaded academic records:', academicData);
+                    setAcademics(academicData || []);
+
+                    // Load file attachments
+                    const { data: fileData, error: fileError } = await supabase
+                        .from('file_attachments')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .order('created_at', { ascending: false });
+
+                    if (fileError) throw fileError;
+                    console.log('Loaded file attachments:', fileData);
+                    setUploadedFiles(fileData || []);
+
+                } catch (error) {
+                    console.error('Error loading data:', error);
+                    setAuthError('Failed to load data. Please refresh the page.');
+                } finally {
+                    setLoading(false);
+                }
+            };
                             category: 'events',
                             date: '2025-09-15',
                             startTime: '09:00',
@@ -497,43 +525,7 @@ END:VCALENDAR`;
                 (item.tags && item.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
             );
 
-            // Render Google Sign-In button
-            useEffect(() => {
-                const renderGoogleButton = () => {
-                    console.log('Attempting to render Google button...');
-                    console.log('Google available:', !!window.google);
-                    console.log('Is authenticated:', isAuthenticated);
-                    
-                    if (window.google && !isAuthenticated && GOOGLE_CLIENT_ID !== 'YOUR_GOOGLE_CLIENT_ID_HERE') {
-                        const button = document.getElementById('google-signin');
-                        if (button) {
-                            console.log('Rendering Google Sign-In button...');
-                            window.google.accounts.id.renderButton(button, {
-                                theme: 'outline',
-                                size: 'large',
-                                width: 300,
-                                text: 'signin_with'
-                            });
-                        } else {
-                            console.log('Google signin button element not found');
-                        }
-                    } else {
-                        console.log('Conditions not met for Google button:', {
-                            google: !!window.google,
-                            authenticated: isAuthenticated,
-                            clientId: GOOGLE_CLIENT_ID
-                        });
-                    }
-                };
 
-                // Try immediately
-                renderGoogleButton();
-                
-                // Also try after a delay in case Google script loads later
-                const timer = setTimeout(renderGoogleButton, 1000);
-                
-                return () => clearTimeout(timer);
-            }, [isAuthenticated]);
 
             // Login screen
             if (!isAuthenticated) {
@@ -555,32 +547,18 @@ END:VCALENDAR`;
                                 </div>
                             )}
 
-                            <div id="google-signin" className="mb-4 flex justify-center">
-                                <div className="text-gray-500 text-sm">Loading Google Sign-In...</div>
-                            </div>
-                            
-                            {/* Fallback for testing */}
-                            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                                <p className="text-sm text-gray-600 mb-2">For testing (bypass Google Sign-In):</p>
-                                <button
-                                    onClick={() => {
-                                        const testUser = {
-                                            name: 'Test User',
-                                            email: 'rupesh.agrawal@gmail.com',
-                                            picture: ''
-                                        };
-                                        setUser(testUser);
-                                        setIsAuthenticated(true);
-                                        localStorage.setItem('schoolUser', JSON.stringify(testUser));
-                                        // Force load sample data for test login
-                                        localStorage.removeItem('schoolData');
-                                        loadData();
-                                    }}
-                                    className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
-                                >
-                                    Test Login (Skip Google Auth)
-                                </button>
-                            </div>
+                            <button
+                                onClick={signInWithGoogle}
+                                className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 mb-4 flex items-center justify-center"
+                            >
+                                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                    <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                                </svg>
+                                Sign in with Google
+                            </button>
 
                             <div className="text-xs text-gray-500 mt-4 text-center">
                                 <p>Authorized family members:</p>
