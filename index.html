@@ -1,0 +1,1138 @@
+Content is user-generated and unverified.
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Japanese School Organizer - 学校情報管理</title>
+    <script src="https://accounts.google.com/gsi/client" defer></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .japanese-tooltip:hover::after {
+            content: attr(title);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        .japanese-tooltip {
+            position: relative;
+            cursor: help;
+        }
+
+        .file-drop-zone {
+            border: 2px dashed #d1d5db;
+            transition: border-color 0.2s;
+        }
+
+        .file-drop-zone:hover {
+            border-color: #6366f1;
+        }
+
+        .file-drop-zone.dragover {
+            border-color: #4f46e5;
+            background-color: #eef2ff;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root">
+        <div class="min-h-screen bg-blue-50 flex items-center justify-center">
+            <div class="text-center">
+                <div class="text-4xl mb-4">🏫</div>
+                <h1 class="text-2xl font-bold mb-4">学校情報管理</h1>
+                <p class="text-gray-600">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/babel">
+        // Debug React loading
+        console.log('React available:', typeof React);
+        console.log('ReactDOM available:', typeof ReactDOM);
+        
+        const { useState, useEffect, useRef } = React;
+
+        // CONFIGURATION - UPDATE THESE
+        const GOOGLE_CLIENT_ID = '273996418341-ul8gluld457g9825di7tgr63adcujblb.apps.googleusercontent.com';
+        const AUTHORIZED_EMAILS = ['rupesh.agrawal@gmail.com', 'smita.vishwa@gmail.com'];
+
+        const SchoolOrganizer = () => {
+            // Authentication state
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [user, setUser] = useState(null);
+            const [authError, setAuthError] = useState('');
+
+            // App state
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [items, setItems] = useState([]);
+            const [events, setEvents] = useState([]);
+            const [actionItems, setActionItems] = useState([]);
+            const [academics, setAcademics] = useState([]);
+            const [uploadedFiles, setUploadedFiles] = useState([]);
+
+            // UI state
+            const [showAddForm, setShowAddForm] = useState(false);
+            const [showQuickEventForm, setShowQuickEventForm] = useState(false);
+            const [loading, setLoading] = useState(false);
+            const fileInputRef = useRef(null);
+
+            // Form state
+            const [newItem, setNewItem] = useState({
+                title: '',
+                category: 'events',
+                date: '',
+                startTime: '09:00',
+                endTime: '17:00',
+                content: '',
+                tags: '',
+                location: '',
+                actionRequired: false
+            });
+
+            // Japanese pronunciation dictionary
+            const japaneseWords = {
+                '学校': 'ガッコウ (gakkou)',
+                '情報': 'ジョウホウ (jouhou)',
+                '管理': 'カンリ (kanri)',
+                '体育祭': 'タイイクサイ (taiikusai)',
+                'PTA': 'ピーティーエー (piitii ee)',
+                '最近': 'サイキン (saikin)',
+                'やること': 'ヤルコト (yaru koto)',
+                '中間テスト': 'チュウカンテスト (chuukan tesuto)',
+                '文化祭': 'ブンカサイ (bunkasai)',
+                '授業参観': 'ジュギョウサンカン (jugyou sankan)',
+                '懇談会': 'コンダンカイ (kondankai)',
+                '遠足': 'エンソク (ensoku)',
+                '給食': 'キュウショク (kyuushoku)',
+                '行事': 'ギョウジ (gyouji)',
+                '学習': 'ガクシュウ (gakushuu)',
+                '活動': 'カツドウ (katsudou)',
+                '総会': 'ソウカイ (soukai)',
+                '試食会': 'シショクカイ (shishokukai)',
+                '会議': 'カイギ (kaigi)',
+                '支払い': 'シハライ (shiharai)',
+                '参加届': 'サンカトドケ (sanka todoke)',
+                '出席': 'シュッセキ (shusseki)',
+                '返事': 'ヘンジ (henji)',
+                '家庭訪問': 'カテイホウモン (katei houmon)',
+                '修学旅行': 'シュウガクリョコウ (shuugaku ryokou)',
+                'クラブ活動': 'クラブカツドウ (kurabu katsudou)',
+                '音楽発表会': 'オンガクハッピョウカイ (ongaku happyoukai)'
+            };
+
+            // Japanese event templates
+            const japaneseEventTemplates = [
+                { name: '体育祭 (Sports Festival)', icon: '🏆', category: 'events', duration: 8 },
+                { name: '文化祭 (Culture Festival)', icon: '🎭', category: 'events', duration: 6 },
+                { name: 'PTA会議 (PTA Meeting)', icon: '👥', category: 'meetings', duration: 2 },
+                { name: '授業参観 (Class Observation)', icon: '🎓', category: 'academics', duration: 3 },
+                { name: '家庭訪問 (Home Visit)', icon: '🏠', category: 'meetings', duration: 1 },
+                { name: '懇談会 (Parent Conference)', icon: '💬', category: 'meetings', duration: 2 },
+                { name: '遠足 (School Trip)', icon: '🚌', category: 'trips', duration: 8 },
+                { name: '修学旅行 (School Excursion)', icon: '🗾', category: 'trips', duration: 1440 },
+                { name: '給食試食会 (Lunch Tasting)', icon: '🍱', category: 'events', duration: 2 },
+                { name: '音楽発表会 (Music Recital)', icon: '🎵', category: 'performances', duration: 3 }
+            ];
+
+            // Japanese tooltip component
+            const JapaneseText = ({ children }) => {
+                if (!children) return null;
+                let result = children;
+                Object.entries(japaneseWords).forEach(([japanese, pronunciation]) => {
+                    const regex = new RegExp(japanese, 'g');
+                    result = result.replace(regex,
+                        `<span class="japanese-tooltip underline decoration-dotted" title="${pronunciation}">${japanese}</span>`);
+                });
+                return <span dangerouslySetInnerHTML={{ __html: result }} />;
+            };
+
+            // Google OAuth initialization
+            useEffect(() => {
+                const initAuth = () => {
+                    console.log('Initializing auth...');
+                    console.log('Google Client ID:', GOOGLE_CLIENT_ID);
+                    console.log('Google object available:', !!window.google);
+                    
+                    if (GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID_HERE') {
+                        setAuthError('Please configure Google Client ID and authorized emails');
+                        return;
+                    }
+
+                    // Check existing session
+                    const saved = localStorage.getItem('schoolUser');
+                    if (saved) {
+                        const userData = JSON.parse(saved);
+                        if (AUTHORIZED_EMAILS.includes(userData.email)) {
+                            setUser(userData);
+                            setIsAuthenticated(true);
+                            loadData();
+                            return;
+                        }
+                    }
+
+                    // Initialize Google Sign-In
+                    if (window.google) {
+                        console.log('Initializing Google Sign-In...');
+                        window.google.accounts.id.initialize({
+                            client_id: GOOGLE_CLIENT_ID,
+                            callback: handleSignIn
+                        });
+                    } else {
+                        console.log('Google not available, retrying...');
+                        setTimeout(initAuth, 100);
+                    }
+                };
+                setTimeout(initAuth, 500);
+            }, []);
+
+            const handleSignIn = (response) => {
+                try {
+                    const payload = JSON.parse(atob(response.credential.split('.')[1]));
+                    if (AUTHORIZED_EMAILS.includes(payload.email)) {
+                        const userData = {
+                            name: payload.name,
+                            email: payload.email,
+                            picture: payload.picture
+                        };
+                        setUser(userData);
+                        setIsAuthenticated(true);
+                        setAuthError('');
+                        localStorage.setItem('schoolUser', JSON.stringify(userData));
+                        loadData();
+                    } else {
+                        setAuthError(`${payload.email} is not authorized for this family organizer`);
+                    }
+                } catch (error) {
+                    setAuthError('Authentication failed. Please try again.');
+                }
+            };
+
+            const signOut = () => {
+                setUser(null);
+                setIsAuthenticated(false);
+                localStorage.removeItem('schoolUser');
+                localStorage.removeItem('schoolData');
+                if (window.google) {
+                    window.google.accounts.id.disableAutoSelect();
+                }
+            };
+
+            const loadData = () => {
+                console.log('Loading data...');
+                const saved = localStorage.getItem('schoolData');
+                console.log('Saved data:', saved);
+                
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    console.log('Loading saved data:', data);
+                    setItems(data.items || []);
+                    setEvents(data.events || []);
+                    setActionItems(data.actionItems || []);
+                    setAcademics(data.academics || []);
+                    setUploadedFiles(data.uploadedFiles || []);
+                } else {
+                    console.log('No saved data found, loading sample data...');
+                    // Load sample Japanese school data
+                    setItems([
+                        {
+                            id: 1,
+                            title: '体育祭のお知らせ (Sports Festival Notice)',
+                            category: 'events',
+                            date: '2025-09-15',
+                            startTime: '09:00',
+                            endTime: '16:00',
+                            content: 'Annual sports festival with parent attendance. Bring water bottle and towel.',
+                            location: '学校グラウンド (School Ground)',
+                            tags: ['体育祭', 'sports', 'festival'],
+                            actionRequired: true,
+                            attachments: []
+                        },
+                        {
+                            id: 2,
+                            title: 'PTA総会のご案内 (PTA General Meeting)',
+                            category: 'meetings',
+                            date: '2025-08-25',
+                            startTime: '14:00',
+                            endTime: '16:00',
+                            content: 'Annual PTA meeting to discuss school policies, budget, and upcoming events.',
+                            location: '体育館 (Gymnasium)',
+                            tags: ['PTA', 'meeting', 'parents'],
+                            actionRequired: true,
+                            attachments: []
+                        },
+                        {
+                            id: 3,
+                            title: '中間テスト時間割 (Midterm Exam Schedule)',
+                            category: 'academics',
+                            date: '2025-10-05',
+                            startTime: '09:00',
+                            endTime: '15:00',
+                            content: 'Mathematics, Science, Japanese, English, and Social Studies exams.',
+                            location: '各教室 (Each Classroom)',
+                            tags: ['中間テスト', 'exams', 'midterm'],
+                            actionRequired: false,
+                            attachments: []
+                        }
+                    ]);
+
+                    setActionItems([
+                        {
+                            id: 1,
+                            task: '体育祭参加届の提出 (Submit sports festival form)',
+                            dueDate: '2025-08-10',
+                            completed: false,
+                            child: 'Child 1'
+                        },
+                        {
+                            id: 2,
+                            task: 'PTA会議の出席返事 (Reply to PTA meeting)',
+                            dueDate: '2025-08-20',
+                            completed: false,
+                            child: 'Parent'
+                        },
+                        {
+                            id: 3,
+                            task: '給食費の支払い (Pay school meal fee)',
+                            dueDate: '2025-08-15',
+                            completed: true,
+                            child: 'Parent'
+                        },
+                        {
+                            id: 4,
+                            task: '制服のクリーニング (Clean school uniform)',
+                            dueDate: '2025-09-10',
+                            completed: false,
+                            child: 'Parent'
+                        }
+                    ]);
+
+                    setAcademics([
+                        {
+                            id: 1,
+                            subject: 'Mathematics (数学)',
+                            grade: 'A',
+                            date: '2025-07-15',
+                            type: 'test',
+                            child: 'Child 1'
+                        },
+                        {
+                            id: 2,
+                            subject: 'Japanese (国語)',
+                            grade: 'B+',
+                            date: '2025-07-20',
+                            type: 'quiz',
+                            child: 'Child 1'
+                        },
+                        {
+                            id: 3,
+                            subject: 'Science (理科)',
+                            grade: 'A-',
+                            date: '2025-07-25',
+                            type: 'project',
+                            child: 'Child 2'
+                        }
+                    ]);
+
+                    setEvents([
+                        { id: 1, title: '体育祭 (Sports Festival)', date: '2025-09-15', type: 'event' },
+                        { id: 2, title: 'PTA総会 (PTA Meeting)', date: '2025-08-25', type: 'meeting' },
+                        { id: 3, title: '中間テスト (Midterm Exams)', date: '2025-10-05', type: 'academic' }
+                    ]);
+                }
+            };
+
+            // Save data to localStorage
+            useEffect(() => {
+                if (isAuthenticated) {
+                    const data = { items, events, actionItems, academics, uploadedFiles };
+                    localStorage.setItem('schoolData', JSON.stringify(data));
+                }
+            }, [items, events, actionItems, academics, uploadedFiles, isAuthenticated]);
+
+            // File upload handling
+            const handleFileUpload = async (files) => {
+                const fileArray = Array.from(files);
+                const newFiles = [];
+
+                for (const file of fileArray) {
+                    if (file.size > 10 * 1024 * 1024) {
+                        alert(`File ${file.name} is too large. Maximum size is 10MB.`);
+                        continue;
+                    }
+
+                    const fileData = {
+                        id: Date.now() + Math.random(),
+                        name: file.name,
+                        size: file.size,
+                        type: file.type,
+                        uploadDate: new Date().toISOString(),
+                        extractedText: file.type.includes('image') ?
+                            'OCR: 体育祭のお知らせ - 9月15日開催 (Sports Festival Notice - September 15th)' : ''
+                    };
+                    newFiles.push(fileData);
+                }
+
+                setUploadedFiles([...uploadedFiles, ...newFiles]);
+                return newFiles;
+            };
+
+            // Calendar event creation
+            const createCalendarEvent = (eventData) => {
+                const { title, date, startTime = '09:00', endTime = '17:00', content = '', location = '' } = eventData;
+                const startDateTime = new Date(`${date}T${startTime}:00`);
+                const endDateTime = new Date(`${date}T${endTime}:00`);
+
+                const formatDate = (date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+
+                const icalContent = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//School Organizer//Event//EN
+BEGIN:VEVENT
+UID:${Date.now()}@school-organizer.com
+DTSTAMP:${formatDate(new Date())}
+DTSTART:${formatDate(startDateTime)}
+DTEND:${formatDate(endDateTime)}
+SUMMARY:${title}
+DESCRIPTION:${content}
+LOCATION:${location}
+END:VEVENT
+END:VCALENDAR`;
+
+                const blob = new Blob([icalContent], { type: 'text/calendar' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${title.replace(/[^a-zA-Z0-9]/g, '_')}.ics`;
+                link.click();
+                URL.revokeObjectURL(url);
+            };
+
+            // Add new item
+            const addNewItem = () => {
+                if (newItem.title.trim()) {
+                    const item = {
+                        id: Date.now(),
+                        ...newItem,
+                        tags: newItem.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+                        dateAdded: new Date().toISOString().split('T')[0],
+                        attachments: []
+                    };
+
+                    setItems([...items, item]);
+
+                    if (newItem.date) {
+                        const newEvent = {
+                            id: Date.now() + 1,
+                            title: newItem.title,
+                            date: newItem.date,
+                            type: newItem.category,
+                            startTime: newItem.startTime,
+                            endTime: newItem.endTime,
+                            location: newItem.location
+                        };
+                        setEvents([...events, newEvent]);
+                    }
+
+                    setNewItem({
+                        title: '',
+                        category: 'events',
+                        date: '',
+                        startTime: '09:00',
+                        endTime: '17:00',
+                        content: '',
+                        tags: '',
+                        location: '',
+                        actionRequired: false
+                    });
+                    setShowAddForm(false);
+                }
+            };
+
+            const addQuickJapaneseEvent = (template) => {
+                const endHour = 9 + (template.duration > 24 ? 8 : template.duration);
+                setNewItem({
+                    title: template.name,
+                    category: template.category,
+                    date: '',
+                    startTime: '09:00',
+                    endTime: `${endHour.toString().padStart(2, '0')}:00`,
+                    content: `Quick event: ${template.name}`,
+                    tags: '学校行事',
+                    location: '学校 (School)',
+                    actionRequired: true
+                });
+                setShowAddForm(true);
+                setShowQuickEventForm(false);
+            };
+
+            const toggleActionItem = (id) => {
+                setActionItems(actionItems.map(item =>
+                    item.id === id ? { ...item, completed: !item.completed } : item
+                ));
+            };
+
+            const filteredItems = items.filter(item =>
+                item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (item.tags && item.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
+            );
+
+            // Render Google Sign-In button
+            useEffect(() => {
+                const renderGoogleButton = () => {
+                    console.log('Attempting to render Google button...');
+                    console.log('Google available:', !!window.google);
+                    console.log('Is authenticated:', isAuthenticated);
+                    
+                    if (window.google && !isAuthenticated && GOOGLE_CLIENT_ID !== 'YOUR_GOOGLE_CLIENT_ID_HERE') {
+                        const button = document.getElementById('google-signin');
+                        if (button) {
+                            console.log('Rendering Google Sign-In button...');
+                            window.google.accounts.id.renderButton(button, {
+                                theme: 'outline',
+                                size: 'large',
+                                width: 300,
+                                text: 'signin_with'
+                            });
+                        } else {
+                            console.log('Google signin button element not found');
+                        }
+                    } else {
+                        console.log('Conditions not met for Google button:', {
+                            google: !!window.google,
+                            authenticated: isAuthenticated,
+                            clientId: GOOGLE_CLIENT_ID
+                        });
+                    }
+                };
+
+                // Try immediately
+                renderGoogleButton();
+                
+                // Also try after a delay in case Google script loads later
+                const timer = setTimeout(renderGoogleButton, 1000);
+                
+                return () => clearTimeout(timer);
+            }, [isAuthenticated]);
+
+            // Login screen
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full">
+                            <div className="text-center mb-6">
+                                <div className="text-5xl mb-4">🏫</div>
+                                <h1 className="text-2xl font-bold mb-2">
+                                    <JapaneseText>学校情報管理</JapaneseText>
+                                </h1>
+                                <p className="text-gray-600">Japanese School Organizer</p>
+                                <p className="text-sm text-blue-600 mt-2">🔐 Secure Google Authentication</p>
+                            </div>
+
+                            {authError && (
+                                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                                    {authError}
+                                </div>
+                            )}
+
+                            <div id="google-signin" className="mb-4 flex justify-center">
+                                <div className="text-gray-500 text-sm">Loading Google Sign-In...</div>
+                            </div>
+                            
+                            {/* Fallback for testing */}
+                            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                                <p className="text-sm text-gray-600 mb-2">For testing (bypass Google Sign-In):</p>
+                                <button
+                                    onClick={() => {
+                                        const testUser = {
+                                            name: 'Test User',
+                                            email: 'rupesh.agrawal@gmail.com',
+                                            picture: ''
+                                        };
+                                        setUser(testUser);
+                                        setIsAuthenticated(true);
+                                        localStorage.setItem('schoolUser', JSON.stringify(testUser));
+                                        // Force load sample data for test login
+                                        localStorage.removeItem('schoolData');
+                                        loadData();
+                                    }}
+                                    className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
+                                >
+                                    Test Login (Skip Google Auth)
+                                </button>
+                            </div>
+
+                            <div className="text-xs text-gray-500 mt-4 text-center">
+                                <p>Authorized family members:</p>
+                                <p>{AUTHORIZED_EMAILS.join(', ')}</p>
+                            </div>
+                            
+
+                        </div>
+                    </div>
+                );
+            }
+
+            // Main app
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+                    {/* Header */}
+                    <div className="bg-white shadow-lg border-b-4 border-indigo-500">
+                        <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4">
+                            <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
+                                <div className="flex items-center space-x-3">
+                                    <div className="text-3xl">🏫</div>
+                                    <div>
+                                        <h1 className="text-xl sm:text-2xl font-bold">
+                                            <JapaneseText>学校情報管理</JapaneseText>
+                                        </h1>
+                                        <p className="text-sm text-gray-600">Welcome, {user?.name}</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="Search..."
+                                            className="pl-8 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 w-full sm:w-48"
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                        />
+                                        <div className="absolute left-2 top-2 text-gray-400">🔍</div>
+                                    </div>
+
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm"
+                                        title="Upload School Documents"
+                                    >
+                                        📎
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowQuickEventForm(true)}
+                                        className="bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 text-sm"
+                                        title="Quick Japanese Events"
+                                    >
+                                        ⚡
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowAddForm(true)}
+                                        className="bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700 text-sm"
+                                    >
+                                        + Add
+                                    </button>
+
+                                    <button
+                                        onClick={signOut}
+                                        className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 text-sm"
+                                    >
+                                        Logout
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Hidden file input */}
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={(e) => handleFileUpload(e.target.files)}
+                        multiple
+                        accept="image/*,.pdf,.doc,.docx"
+                        className="hidden"
+                    />
+
+                    {/* Navigation Tabs */}
+                    <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4">
+                        <div className="flex space-x-1 bg-white rounded-lg p-1 shadow overflow-x-auto">
+                            {[
+                                { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+                                { id: 'events', label: 'Events', icon: '🎉' },
+                                { id: 'academics', label: 'Academics', icon: '📚' },
+                                { id: 'actions', label: 'Actions', icon: '✅' }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center space-x-2 px-3 sm:px-4 py-2 sm:py-3 rounded-md font-medium transition-all whitespace-nowrap text-sm ${activeTab === tab.id
+                                            ? 'bg-indigo-600 text-white shadow-md'
+                                            : 'text-gray-600 hover:bg-gray-100'
+                                        }`}
+                                >
+                                    <span>{tab.icon}</span>
+                                    <span className="hidden sm:inline">{tab.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Quick Japanese Event Modal */}
+                    {showQuickEventForm && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-lg w-full max-w-lg shadow-xl max-h-screen overflow-y-auto">
+                                <div className="p-6">
+                                    <h3 className="text-lg font-bold mb-4 text-center">
+                                        <JapaneseText>日本の学校行事 (Japanese School Events)</JapaneseText>
+                                    </h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {japaneseEventTemplates.map((template, index) => (
+                                            <button
+                                                key={index}
+                                                onClick={() => addQuickJapaneseEvent(template)}
+                                                className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 text-left"
+                                            >
+                                                <span className="text-xl">{template.icon}</span>
+                                                <div className="flex-1">
+                                                    <p className="font-medium text-sm">
+                                                        <JapaneseText>{template.name}</JapaneseText>
+                                                    </p>
+                                                    <p className="text-xs text-gray-500">{template.category}</p>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => setShowQuickEventForm(false)}
+                                        className="w-full mt-4 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add Form Modal */}
+                    {showAddForm && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-lg w-full max-w-lg shadow-xl max-h-screen overflow-y-auto">
+                                <div className="p-6">
+                                    <h3 className="text-lg font-bold mb-4">
+                                        <JapaneseText>新しい学校情報を追加 (Add New School Information)</JapaneseText>
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <input
+                                            type="text"
+                                            placeholder="Title (Japanese/English)"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            value={newItem.title}
+                                            onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
+                                        />
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <select
+                                                className="w-full p-3 border rounded-lg text-sm"
+                                                value={newItem.category}
+                                                onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                                            >
+                                                <option value="events">Events</option>
+                                                <option value="academics">Academics</option>
+                                                <option value="meetings">Meetings</option>
+                                                <option value="trips">Trips</option>
+                                                <option value="performances">Performances</option>
+                                            </select>
+                                        </div>
+
+                                        <input
+                                            type="date"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            value={newItem.date}
+                                            onChange={(e) => setNewItem({ ...newItem, date: e.target.value })}
+                                        />
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input
+                                                type="time"
+                                                className="w-full p-3 border rounded-lg text-sm"
+                                                value={newItem.startTime}
+                                                onChange={(e) => setNewItem({ ...newItem, startTime: e.target.value })}
+                                            />
+                                            <input
+                                                type="time"
+                                                className="w-full p-3 border rounded-lg text-sm"
+                                                value={newItem.endTime}
+                                                onChange={(e) => setNewItem({ ...newItem, endTime: e.target.value })}
+                                            />
+                                        </div>
+
+                                        <input
+                                            type="text"
+                                            placeholder="Location (場所)"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            value={newItem.location}
+                                            onChange={(e) => setNewItem({ ...newItem, location: e.target.value })}
+                                        />
+
+                                        <textarea
+                                            placeholder="Content/Description (内容)"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            rows="3"
+                                            value={newItem.content}
+                                            onChange={(e) => setNewItem({ ...newItem, content: e.target.value })}
+                                        />
+
+                                        <input
+                                            type="text"
+                                            placeholder="Tags (comma separated)"
+                                            className="w-full p-3 border rounded-lg text-sm"
+                                            value={newItem.tags}
+                                            onChange={(e) => setNewItem({ ...newItem, tags: e.target.value })}
+                                        />
+
+                                        <div className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                id="actionRequired"
+                                                className="mr-2"
+                                                checked={newItem.actionRequired}
+                                                onChange={(e) => setNewItem({ ...newItem, actionRequired: e.target.checked })}
+                                            />
+                                            <label htmlFor="actionRequired" className="text-sm">Action Required</label>
+                                        </div>
+
+                                        <div className="flex space-x-3">
+                                            <button
+                                                onClick={addNewItem}
+                                                className="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700"
+                                            >
+                                                Add Item
+                                            </button>
+                                            <button
+                                                onClick={() => setShowAddForm(false)}
+                                                className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Main Content */}
+                    <div className="max-w-7xl mx-auto px-2 sm:px-4 pb-8">
+                                                {activeTab === 'dashboard' && (
+                                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                                        {/* Recent Items */}
+                                                        <div className="lg:col-span-2 bg-white rounded-lg shadow-lg p-6">
+                                                            <h2 className="text-xl font-bold mb-4 flex items-center">
+                                                                📋 <JapaneseText>最近の学校情報 (Recent Info)</JapaneseText>
+                                                            </h2>
+                                                            <div className="space-y-4">
+                                                                {filteredItems.slice(0, 5).map(item => (
+                                                                    <div key={item.id} className="border-l-4 border-indigo-500 pl-4 py-3 bg-gray-50 rounded-r-lg">
+                                                                        <div className="flex items-start justify-between">
+                                                                            <div className="flex-1 min-w-0">
+                                                                                <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">
+                                                                                    <JapaneseText>{item.title}</JapaneseText>
+                                                                                </h3>
+                                                                                <p className="text-gray-600 text-xs sm:text-sm mt-1">{item.content}</p>
+                                                                                <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                                                    <span className="text-xs text-gray-500">📅 {item.date}</span>
+                                                                                    {item.location && (
+                                                                                        <span className="text-xs text-gray-500">📍 <JapaneseText>{item.location}</JapaneseText></span>
+                                                                                    )}
+                                                                                    <span className={`px-2 py-1 rounded-full text-xs ${item.category === 'events' ? 'bg-blue-100 text-blue-800' :
+                                                                                            item.category === 'academics' ? 'bg-green-100 text-green-800' :
+                                                                                                item.category === 'meetings' ? 'bg-purple-100 text-purple-800' :
+                                                                                                    'bg-gray-100 text-gray-800'
+                                                                                        }`}>
+                                                                                        {item.category}
+                                                                                    </span>
+                                                                                    {item.tags && item.tags.slice(0, 2).map(tag => (
+                                                                                        <span key={tag} className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full text-xs">
+                                                                                            <JapaneseText>{tag}</JapaneseText>
+                                                                                        </span>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="flex flex-col items-end space-y-2 ml-2">
+                                                                                {item.actionRequired && (
+                                                                                    <span className="text-red-500 text-xs">⚠️</span>
+                                                                                )}
+                                                                                <button
+                                                                                    onClick={() => createCalendarEvent(item)}
+                                                                                    className="bg-green-500 text-white p-1 rounded hover:bg-green-600 text-xs"
+                                                                                    title="Add to Calendar"
+                                                                                >
+                                                                                    📅
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Stats & Quick Actions */}
+                                                        <div className="space-y-6">
+                                                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                                                <h3 className="text-lg font-bold mb-4">📊 Quick Stats</h3>
+                                                                <div className="space-y-3">
+                                                                    <div className="flex justify-between">
+                                                                        <span className="text-gray-600">Total Items</span>
+                                                                        <span className="font-bold text-indigo-600">{items.length}</span>
+                                                                    </div>
+                                                                    <div className="flex justify-between">
+                                                                        <span className="text-gray-600">Pending Actions</span>
+                                                                        <span className="font-bold text-red-600">{actionItems.filter(a => !a.completed).length}</span>
+                                                                    </div>
+                                                                    <div className="flex justify-between">
+                                                                        <span className="text-gray-600">Files Uploaded</span>
+                                                                        <span className="font-bold text-purple-600">{uploadedFiles.length}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                                                <h3 className="text-lg font-bold mb-4">🚀 <JapaneseText>クイック追加</JapaneseText></h3>
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    {japaneseEventTemplates.slice(0, 4).map((template, index) => (
+                                                                        <button
+                                                                            key={index}
+                                                                            onClick={() => addQuickJapaneseEvent(template)}
+                                                                            className="flex flex-col items-center p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-center"
+                                                                        >
+                                                                            <span className="text-lg mb-1">{template.icon}</span>
+                                                                            <span className="text-xs font-medium truncate w-full">
+                                                                                <JapaneseText>{template.name.split('(')[0].trim()}</JapaneseText>
+                                                                            </span>
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => setShowQuickEventForm(true)}
+                                                                    className="w-full mt-3 bg-purple-100 text-purple-700 py-2 rounded-lg hover:bg-purple-200 text-sm"
+                                                                >
+                                                                    View All Templates
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {activeTab === 'events' && (
+                                                    <div className="bg-white rounded-lg shadow-lg p-6">
+                                                        <h2 className="text-xl font-bold mb-6 flex items-center">
+                                                            🎉 <JapaneseText>行事・活動 (Events & Activities)</JapaneseText>
+                                                        </h2>
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                            {filteredItems.filter(item => ['events', 'clubs', 'meetings', 'trips', 'performances'].includes(item.category)).map(item => (
+                                                                <div key={item.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                                                                    <div className="flex items-start justify-between mb-2">
+                                                                        <h3 className="font-semibold text-gray-900 text-sm flex-1">
+                                                                            <JapaneseText>{item.title}</JapaneseText>
+                                                                        </h3>
+                                                                        {item.actionRequired && <span className="text-red-500 ml-2">⚠️</span>}
+                                                                    </div>
+                                                                    <p className="text-xs text-gray-600 mb-3">{item.content}</p>
+                                                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                        <div className="flex flex-wrap items-center gap-1">
+                                                                            <span className="text-xs text-gray-500">📅 {item.date}</span>
+                                                                            {item.location && (
+                                                                                <span className="text-xs text-gray-500">📍 <JapaneseText>{item.location}</JapaneseText></span>
+                                                                            )}
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => createCalendarEvent(item)}
+                                                                            className="bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600"
+                                                                        >
+                                                                            📅 Add
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {activeTab === 'academics' && (
+                                                    <div className="bg-white rounded-lg shadow-lg p-6">
+                                                        <h2 className="text-xl font-bold mb-6 flex items-center">
+                                                            📚 <JapaneseText>学習記録 (Academic Tracking)</JapaneseText>
+                                                        </h2>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                            <div>
+                                                                <h3 className="text-lg font-semibold mb-4">
+                                                                    <JapaneseText>最近の成績 (Recent Grades)</JapaneseText>
+                                                                </h3>
+                                                                <div className="space-y-3">
+                                                                    {academics.map(record => (
+                                                                        <div key={record.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                                            <div className="flex-1">
+                                                                                <p className="font-medium text-sm">
+                                                                                    <JapaneseText>{record.subject}</JapaneseText>
+                                                                                </p>
+                                                                                <p className="text-xs text-gray-600">{record.child} • {record.date}</p>
+                                                                            </div>
+                                                                            <div className="text-right">
+                                                                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${record.grade.startsWith('A') ? 'bg-green-100 text-green-800' :
+                                                                                        record.grade.startsWith('B') ? 'bg-blue-100 text-blue-800' :
+                                                                                            'bg-yellow-100 text-yellow-800'
+                                                                                    }`}>
+                                                                                    {record.grade}
+                                                                                </span>
+                                                                                <p className="text-xs text-gray-500 mt-1">{record.type}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <h3 className="text-lg font-semibold mb-4">
+                                                                    <JapaneseText>学習予定 (Study Schedule)</JapaneseText>
+                                                                </h3>
+                                                                <div className="text-center py-8 text-gray-500">
+                                                                    <div className="text-4xl mb-2">📅</div>
+                                                                    <p className="text-sm">Exam schedules and study plans will appear here</p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {activeTab === 'actions' && (
+                                                    <div className="bg-white rounded-lg shadow-lg p-6">
+                                                        <h2 className="text-xl font-bold mb-6 flex items-center">
+                                                            ✅ <JapaneseText>やることリスト (Action Items & Tasks)</JapaneseText>
+                                                        </h2>
+                                                        <div className="space-y-4">
+                                                            {actionItems.map(action => (
+                                                                <div key={action.id} className={`flex items-center justify-between p-4 rounded-lg border-2 ${action.completed ? 'border-green-200 bg-green-50' : 'border-orange-200 bg-orange-50'
+                                                                    }`}>
+                                                                    <div className="flex items-center space-x-3 flex-1">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={action.completed}
+                                                                            onChange={() => toggleActionItem(action.id)}
+                                                                            className="w-5 h-5"
+                                                                        />
+                                                                        <div className="flex-1">
+                                                                            <p className={`font-medium text-sm ${action.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                                                                                <JapaneseText>{action.task}</JapaneseText>
+                                                                            </p>
+                                                                            <p className="text-xs text-gray-600">
+                                                                                {action.child} • Due: {action.dueDate}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <span className={`px-3 py-1 rounded-full text-sm ${action.completed ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+                                                                        }`}>
+                                                                        {action.completed ? 'Complete' : 'Pending'}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+
+                                                        {/* Quick Action Templates */}
+                                                        <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                                                            <h3 className="font-semibold mb-3 text-sm">
+                                                                <JapaneseText>よくあるタスク (Common Tasks)</JapaneseText>
+                                                            </h3>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                {[
+                                                                    '体育祭参加届の提出 (Submit sports festival form)',
+                                                                    '宿題の確認 (Check homework)',
+                                                                    'PTA会議の出席返事 (Reply to PTA meeting)',
+                                                                    '制服のクリーニング (Uniform cleaning)',
+                                                                    '給食費の支払い (Pay school meal fee)',
+                                                                    '連絡帳の確認 (Check contact notebook)'
+                                                                ].map((task, index) => (
+                                                                    <button
+                                                                        key={index}
+                                                                        onClick={() => {
+                                                                            const newAction = {
+                                                                                id: Date.now() + index,
+                                                                                task: task,
+                                                                                dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                                                                                completed: false,
+                                                                                child: 'Parent'
+                                                                            };
+                                                                            setActionItems([...actionItems, newAction]);
+                                                                        }}
+                                                                        className="text-left p-2 border border-gray-200 rounded hover:bg-white text-xs"
+                                                                    >
+                                                                        <JapaneseText>{task}</JapaneseText>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Mobile Bottom Navigation */}
+                                            <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2">
+                                                <div className="flex justify-around">
+                                                    <button
+                                                        onClick={() => setShowAddForm(true)}
+                                                        className="flex flex-col items-center space-y-1 p-2"
+                                                    >
+                                                        <span className="text-xl">➕</span>
+                                                        <span className="text-xs text-gray-600">Add</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => fileInputRef.current?.click()}
+                                                        className="flex flex-col items-center space-y-1 p-2"
+                                                    >
+                                                        <span className="text-xl">📎</span>
+                                                        <span className="text-xs text-gray-600">Upload</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setShowQuickEventForm(true)}
+                                                        className="flex flex-col items-center space-y-1 p-2"
+                                                    >
+                                                        <span className="text-xl">⚡</span>
+                                                        <span className="text-xs text-gray-600">Quick</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Add padding for mobile navigation */}
+                                            <div className="h-16 sm:h-0"></div>
+                                        </div>
+                                );
+                            };
+
+                            // Initialize the React app
+                            try {
+                                console.log('Attempting to render SchoolOrganizer...');
+                                ReactDOM.render(<SchoolOrganizer />, document.getElementById('root'));
+                                console.log('SchoolOrganizer rendered successfully');
+                            } catch (error) {
+                                console.error('Error rendering SchoolOrganizer:', error);
+                                // Fallback to simple test
+                                ReactDOM.render(
+                                    <div style={{padding: '20px', textAlign: 'center'}}>
+                                        <h1>React Test</h1>
+                                        <p>React is working! Error in SchoolOrganizer component.</p>
+                                        <p>Error: {error.message}</p>
+                                    </div>, 
+                                    document.getElementById('root')
+                                );
+                            }
+    </script>
+</body>
+
+</html> 
